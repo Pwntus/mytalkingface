@@ -12,7 +12,7 @@
 
   div
     .upload-button.relative.overflow-hidden.w-full.flex.flex-col.gap-4.justify-center.items-center.text-center.cursor-pointer.rounded-2xl.aspect-1.text-2xl(
-      @click="() => !video_original && onClickUpload()"
+      @click="onClickUpload"
       class="bg-[#e4e4e4] hover:bg-[#dddddd]"
     )
       template(v-if="video_original")
@@ -59,11 +59,14 @@
       )
         template(#default="{ item, index, open }")
 
-    video.w-full(
+    u-button(
       v-if="video_retalk"
-      controls
-    )
-      source(:src="video_retalk")
+      :to="video_retalk"
+      target="_blank"
+      size="xl"
+      color="primary"
+      block
+    ) Open final video
 </template>
 
 <script>
@@ -155,9 +158,7 @@ export default {
         {
           label: '5. Lipsync',
           icon: 'i-heroicons-face-smile',
-          content: `The original video and the new audio is used by a lip-synching model to create a new video. This can take a while (>5min). URL: ${
-            this.video_retalk || 'Loading...'
-          }`,
+          content: `The original video and the new audio is used by a lip-synching model to create a new video. This can take a while (>5min).`,
           variant: this.loading_retalk ? 'solid' : 'ghost',
           defaultOpen: this.loading_retalk
         }
@@ -185,7 +186,7 @@ export default {
       this.video_retalk = null
     },
     onClickUpload() {
-      if (this.loading_file) return
+      if (!this.api_token || this.loading_file || this.video_original) return
       this.$refs.file.click()
     },
     async onFileSelected(e) {
