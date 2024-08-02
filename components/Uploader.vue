@@ -55,9 +55,16 @@
       size="xl"
     )
       u-accordion(
+        v-if="show_accordion"
         :items="accordion_items"
       )
-        template(#default="{ item, index, open }")
+        template(#item="{ item }")
+          u-badge.mr-1(
+            v-if="item.statusBadge"
+            :color="item.statusBadge.color"
+            variant="subtle"
+          ) {{ item.statusBadge.text }}
+          | {{ item.content }}
 
     u-button(
       v-if="video_retalk"
@@ -84,7 +91,9 @@ export default {
     language: useLocalStorage('mytalkingface-language', 'en')
   }),
   data: () => ({
+    show_accordion: true,
     abort: false,
+    status: null,
 
     loading_file: false,
     loading_transcribe: false,
@@ -134,7 +143,8 @@ export default {
             this.transcription_original || 'loading...'
           }`,
           variant: this.loading_transcribe ? 'solid' : 'ghost',
-          defaultOpen: this.loading_transcribe
+          defaultOpen: this.loading_transcribe,
+          statusBadge: this.loading_transcribe ? this.status_badge : null
         },
         {
           label: '3. Translate',
@@ -145,7 +155,8 @@ export default {
             this.transcription_translated || 'loading...'
           }`,
           variant: this.loading_translate ? 'solid' : 'ghost',
-          defaultOpen: this.loading_translate
+          defaultOpen: this.loading_translate,
+          statusBadge: this.loading_translate ? this.status_badge : null
         },
         {
           label: '4. TTS',
@@ -153,24 +164,48 @@ export default {
           content:
             'The translated text and audio recording is used by a text-to-speech model to synthesize a new audio recording with the original voice.',
           variant: this.loading_tts ? 'solid' : 'ghost',
-          defaultOpen: this.loading_tts
+          defaultOpen: this.loading_tts,
+          statusBadge: this.loading_tts ? this.status_badge : null
         },
         {
           label: '5. Lipsync',
           icon: 'i-heroicons-face-smile',
           content: `The original video and the new audio is used by a lip-synching model to create a new video. This can take a while (>5min).`,
           variant: this.loading_retalk ? 'solid' : 'ghost',
-          defaultOpen: this.loading_retalk
+          defaultOpen: this.loading_retalk,
+          statusBadge: this.loading_retalk ? this.status_badge : null
         }
       ]
+    },
+    status_badge() {
+      const color_map = {
+        starting: 'black',
+        processing: 'blue',
+        succeeded: 'green',
+        failed: 'red',
+        canceled: 'yellow'
+      }
+
+      const color = Object.keys(color_map).includes(this.status)
+        ? color_map[this.status]
+        : 'grey'
+
+      return {
+        color,
+        text: this.status
+      }
     }
   },
   watch: {
-    accordion_items() {}
+    accordion_items() {
+      this.show_accordion = false
+      this.$nextTick(() => (this.show_accordion = true))
+    }
   },
   methods: {
     reset() {
       this.abort = true
+      this.status = null
 
       this.loading_file = false
       this.loading_transcribe = false
@@ -203,22 +238,47 @@ export default {
           await ffmpeg.load()
         }
 
-        // Start processing video to base64
+        // Write the file to FFmpeg's file system
+        ffmpeg.FS('writeFile', 'input_video', await fetchFile(file))
+
+        // Convert the input video to MP4 with max 480x480 size
+        await ffmpeg.run(
+          '-i',
+          'input_video',
+          '-c:v',
+          'libx264', // Use H.264 codec for video
+          '-c:a',
+          'aac', // Use AAC codec for audio
+          '-strict',
+          'experimental', // Needed for some FFmpeg versions
+          '-b:a',
+          '192k', // Audio bitrate
+          '-vf',
+          'scale=w=480:h=480:force_original_aspect_ratio=decrease,pad=480:480:(ow-iw)/2:(oh-ih)/2,setsar=1:1', // Scale and pad to 480x480
+          '-pix_fmt',
+          'yuv420p', // Ensure video compatibility
+          'output.mp4'
+        )
+
+        // Read the converted MP4 file
+        const mp4Data = ffmpeg.FS('readFile', 'output.mp4')
+
+        // Create a Blob from the MP4 data
+        const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' })
+
+        // Convert MP4 to base64
         const videoBase64Promise = new Promise((resolve) => {
           const videoReader = new FileReader()
           videoReader.onload = () => {
             resolve(videoReader.result)
           }
-          videoReader.readAsDataURL(file)
+          videoReader.readAsDataURL(mp4Blob)
         })
 
-        // Write the file to FFmpeg's file system
-        ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file))
-
-        // Run FFmpeg command to extract audio
+        // Extract audio from the MP4
         await ffmpeg.run(
           '-i',
-          'input.mp4',
+          'output.mp4',
           '-vn',
           '-acodec',
           'libmp3lame',
@@ -261,6 +321,15 @@ export default {
         this.pipeline()
       } catch (e) {
         console.log(e)
+      } finally {
+        // Clean up FFmpeg file system
+        try {
+          ffmpeg.FS('unlink', 'input_video')
+          ffmpeg.FS('unlink', 'output.mp4')
+          ffmpeg.FS('unlink', 'output.mp3')
+        } catch (e) {
+          console.error('Error cleaning up FFmpeg file system:', e)
+        }
       }
     },
 
@@ -282,8 +351,10 @@ export default {
         console.log('--- error (createFile):', e.message)
       }
     },
-    async createPrediction(version, input) {
+    async createPrediction(version, input, poll_interval = 4000) {
       try {
+        this.status = 'starting'
+
         const response = await $fetch('/api/prediction', {
           method: 'POST',
           body: {
@@ -295,17 +366,20 @@ export default {
 
         const id = response.data.id
 
-        let status = 'starting'
         let response_poll = null
 
         // Poll
-        while (status !== 'succeeded' && status !== 'failed') {
+        while (this.status !== 'succeeded' && this.status !== 'failed') {
           response_poll = await $fetch(
             `/api/prediction?api_token=${this.api_token}&id=${id}`
           )
-          status = response_poll.data.status
+          this.status = response_poll.data.status
 
-          await sleep(4000)
+          if (this.status !== 'succeeded' && this.status !== 'failed') {
+            await sleep(poll_interval)
+          } else {
+            await sleep(1000)
+          }
         }
 
         return response_poll.data
@@ -349,7 +423,8 @@ export default {
           'meta/meta-llama-3-8b-instruct',
           {
             prompt: `Translate the text into ${language_option.label}. Do not add anything other than the translated text!\n\nText: ${this.transcription_original}`
-          }
+          },
+          1000
         )
         this.transcription_translated = translation_prediction.output.join('')
         this.loading_translate = false
@@ -368,7 +443,8 @@ export default {
             speaker: this.audio_original,
             language: this.language,
             cleanup_voice: true
-          }
+          },
+          5000
         )
         this.audio_tts = tts_prediction.output
         this.loading_tts = false
@@ -385,7 +461,8 @@ export default {
           {
             face: this.video_original,
             input_audio: this.audio_tts
-          }
+          },
+          10000
         )
         this.video_retalk = retalk_prediction.output
         this.loading_retalk = false
