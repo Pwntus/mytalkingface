@@ -30,21 +30,13 @@
         ) localstorage
         | , and use it to run machine learning models in the cloud.
       template(#footer)
-        .flex.space-x-4
-          u-button(
-            to="https://replicate.com/signin"
-            target="_blank"
-            color="black"
-            icon="i-heroicons-arrow-top-right-on-square"
-            trailing
-          ) Replicate signup
-          u-button(
-            to="https://replicate.com/account/api-tokens"
-            target="_blank"
-            color="black"
-            icon="i-heroicons-arrow-top-right-on-square"
-            trailing
-          ) My API tokens
+        u-button(
+          to="https://replicate.com/account/api-tokens"
+          target="_blank"
+          color="black"
+          icon="i-heroicons-arrow-top-right-on-square"
+          trailing
+        ) My Replicate API tokens
 
   .mb-8.mx-auto.gap-4.flex.flex-row.max-w-5xl.items-center(
     class="sm:mb-16 md:mb-24"

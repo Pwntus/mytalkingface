@@ -1,5 +1,6 @@
 <template lang="pug">
 #uploader.mx-auto.mb-8.px-4.max-w-5xl.grid.grid-cols-1.gap-8(
+  v-if="api_token"
   class="sm:mb-16 md:mb-24 sm:px-6 lg:px-8 sm:gap-y-24 md:grid-cols-2"
 )
   //- Hidden input
@@ -132,7 +133,7 @@ export default {
           label: '1. Upload',
           icon: 'i-heroicons-arrow-up-tray',
           content:
-            'The audio is separated from the video and uploaded to a temporary cloud storage. Uploaded files are faster for machine leraning models to process.',
+            'The audio is separated from the video and uploaded to a temporary cloud storage. Uploaded files are faster for machine learning models to process.',
           variant: this.loading_file ? 'solid' : 'ghost',
           defaultOpen: this.loading_file
         },
