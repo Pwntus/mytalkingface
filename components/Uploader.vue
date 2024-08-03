@@ -60,11 +60,14 @@
         :items="accordion_items"
       )
         template(#item="{ item }")
-          u-badge.mr-1(
+          u-button.mr-1(
             v-if="item.statusBadge"
+            :label="item.statusBadge.text"
             :color="item.statusBadge.color"
-            variant="subtle"
-          ) {{ item.statusBadge.text }}
+            variant="solid"
+            size="2xs"
+            :loading="item.statusBadge.text === 'starting' || item.statusBadge.text === 'processing'"
+          )
           | {{ item.content }}
 
     u-button(
@@ -189,7 +192,7 @@ export default {
 
       const color = Object.keys(color_map).includes(this.status)
         ? color_map[this.status]
-        : 'grey'
+        : 'gray'
 
       return {
         color,
